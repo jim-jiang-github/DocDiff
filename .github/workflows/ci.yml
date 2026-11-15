@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: 资源校验与试构建
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 校验静态资源完整性
+        run: |
+          set -euo pipefail
+          for f in lib/mammoth.browser.min.js lib/pdf.min.js lib/pdf.worker.min.js lib/jszip.min.js lib/docx-preview.min.js; do
+            if [ ! -s "$f" ]; then
+              echo "::error::缺少或为空的依赖文件：$f"
+              exit 1
+            fi
+          done
+          if [ ! -s favicon.ico ]; then
+            echo "::error::缺少 favicon.ico"
+            exit 1
+          fi
+          echo "✓ 依赖文件齐全"
+
+      - name: 校验页面引用的脚本都存在
+        run: |
+          set -euo pipefail
+          fail=0
+          while IFS= read -r src; do
+            if [ ! -f "$src" ]; then
+              echo "::error::index.html 引用了不存在的文件：$src"
+              fail=1
+            fi
+          done < <(grep -o 'src="[^"]*"' index.html | sed 's/^src="//; s/"$//' | grep -v '^https\?://' || true)
+          if [ "$fail" -ne 0 ]; then exit 1; fi
+          echo "✓ 页面内引用的脚本均存在"
+
+      - name: 校验没有外部 CDN 依赖
+        run: |
+          set -euo pipefail
+          if grep -nE '<script[^>]+src="https?://' index.html; then
+            echo "::error::页面引入了外部脚本，破坏离线/隐私保证"
+            exit 1
+          fi
+          echo "✓ 无外部脚本引用"
+
+      - name: 试构建
+        run: bash scripts/build.sh
+
+      - name: 检查构建产物
+        run: |
+          set -euo pipefail
+          for f in dist/index.html dist/version.json dist/lib/pdf.worker.min.js dist/favicon.ico; do
+            if [ ! -s "$f" ]; then
+              echo "::error::构建产物缺失：$f"
+              exit 1
+            fi
+          done
+          echo "✓ dist/ 产物完整"

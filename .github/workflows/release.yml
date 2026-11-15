@@ -1,0 +1,117 @@
+name: Release
+
+# 发布由 Tag 驱动：只有形如 v0.0.1 的标签才会触发构建、打包和部署。
+on:
+  push:
+    tags:
+      - 'v[0-9]*.[0-9]*.[0-9]*'
+
+# 创建 Release 需要 contents:write；部署 Pages 需要 pages:write 与 id-token:write
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+# 同一时间只允许一个 Pages 部署，且不取消进行中的发布
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: 构建并打包
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 校验 Tag 版本号
+        id: meta
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          echo "收到标签：${TAG}"
+
+          # 严格语义化版本：vMAJOR.MINOR.PATCH，可选 -alpha.1 之类的预发布标识
+          if [[ ! "${TAG}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$ ]]; then
+            echo "::error title=标签格式不正确::'${TAG}' 不是合法的版本号。请使用 vMAJOR.MINOR.PATCH，例如 v0.0.1、v0.1.0、v1.0.0、v0.2.0-beta.1。"
+            exit 1
+          fi
+
+          VERSION="${TAG#v}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "### 发布版本 ${TAG}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 检查标签是否来自 dev 分支
+        run: |
+          set -euo pipefail
+          if git rev-parse --verify --quiet origin/dev >/dev/null; then
+            if git merge-base --is-ancestor HEAD origin/dev; then
+              echo "✓ 标签所在提交已在 dev 分支历史中"
+            else
+              echo "::warning title=标签不在 dev 分支::该提交不属于 origin/dev，请确认这不是从临时分支误发的版本。"
+            fi
+          else
+            echo "::notice::未找到 origin/dev，跳过分支检查"
+          fi
+
+      - name: 构建静态站点
+        run: bash scripts/build.sh "${{ steps.meta.outputs.version }}"
+
+      - name: 打包发布产物
+        run: |
+          set -euo pipefail
+          cd dist
+          zip -qr "../DocDiff-${{ steps.meta.outputs.tag }}.zip" .
+          cd ..
+          ls -lh "DocDiff-${{ steps.meta.outputs.tag }}.zip"
+
+      - name: 上传 GitHub Pages 产物
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - name: 创建 GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.meta.outputs.tag }}"
+          ZIP="DocDiff-${TAG}.zip"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release ${TAG} 已存在，改为覆盖附件（常见于重跑工作流）"
+            gh release upload "$TAG" "$ZIP" --clobber
+            gh release edit "$TAG" --title "DocDiff ${TAG}"
+          else
+            gh release create "$TAG" "$ZIP" \
+              --title "DocDiff ${TAG}" \
+              --generate-notes \
+              --verify-tag
+          fi
+
+  deploy:
+    name: 部署 GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: 部署到 GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: 写入部署摘要
+        run: |
+          {
+            echo "### 部署完成 :rocket:"
+            echo ""
+            echo "- 版本：${{ needs.build.outputs.tag }}"
+            echo "- 站点：${{ steps.deployment.outputs.page_url }}"
+          } >> "$GITHUB_STEP_SUMMARY"
