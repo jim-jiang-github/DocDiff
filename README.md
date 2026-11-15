@@ -153,13 +153,16 @@ git push origin :refs/tags/v0.0.1   # 若上面没清理干净，再删远端 Ta
 
 ## 首次启用 GitHub Pages（一次性）
 
-首次打 Tag 前需要手动打开 Pages，否则部署步骤会报 `Get Pages site failed`：
+首次打 Tag 前需要手动完成两步，否则部署步骤会失败：
 
-1. 进入仓库 **Settings → Pages**；
-2. **Build and deployment → Source** 选择 **GitHub Actions**（不要选 Deploy from a branch）；
-3. 回到 Actions 页面重跑一次失败的 release 工作流，或重新打 Tag。
+1. 进入仓库 **Settings → Pages**，把 **Build and deployment → Source** 改为 **GitHub Actions**（不要选 Deploy from a branch）。
+   未启用时部署会报 `Error: Creating Pages deployment failed ... HttpError: Not Found`（HTTP 404）。
+2. 进入 **Settings → Environments → github-pages → Deployment branches and tags**，确认允许从 Tag 部署，添加一条规则：**Tag / `v*`**。
+   仓库启用 Pages 时，该环境可能只默认允许默认分支；而本项目的发布由 Tag 触发，未被允许的 Tag 会让部署任务**在启动前就被拒绝**——表现为任务 2 秒内失败、**没有任何步骤日志**。
 
-站点地址为 `https://jim-jiang-github.github.io/DocDiff/`。
+两步都完成后，回到 Actions 重跑一次失败的 release 工作流（或重新打 Tag）即可。
+
+站点地址为 `https://jim-jiang-github.github.io/DocDiff/`，页脚显示的版本号来自当前发布的 Tag。
 
 ## 版本历史
 
@@ -181,6 +184,9 @@ Tag 必须形如 `v0.0.1`。`v1.0`、`0.0.1`、`v0.0.01` 都不接受，删掉 T
 
 **部署成功但页面 404？**
 Settings → Pages 的 Source 没选 GitHub Actions，或首次部署尚未生效（通常 1 分钟内）。
+
+**部署任务几秒就失败，而且点进去没有任何步骤日志？**
+不是代码问题，是 `github-pages` 环境不允许从 Tag 部署。去 Settings → Environments → github-pages → Deployment branches and tags 添加 **Tag / `v*`** 规则后重跑即可。
 
 **扫描版 PDF 比不出内容？**
 扫描件没有文字层，提取结果为空。请先用 OCR 工具处理，或提供对应的 Word 文件。
