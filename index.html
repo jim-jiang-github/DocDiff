@@ -1,0 +1,1141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>文档比对工具 · 找出两份文档的所有差异</title>
+<script src="lib/mammoth.browser.min.js"></script>
+<script src="lib/pdf.min.js"></script>
+<script src="lib/jszip.min.js"></script>
+<script src="lib/docx-preview.min.js"></script>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --border: #e3e6ea;
+    --text: #2b2f36;
+    --muted: #8a919c;
+    --primary: #3b6ef5;
+    --primary-dark: #2f5adb;
+    --del-bg: #ffecec;
+    --del-strong: #f7c5c5;
+    --del-text: #c0392b;
+    --add-bg: #e9f9ef;
+    --add-strong: #b8ecc8;
+    --add-text: #1e8e3e;
+    --row-del: #fff5f5;
+    --row-add: #f4fcf6;
+    --row-mod: #fffdf2;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+  }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 24px 20px 60px; }
+  header h1 { font-size: 22px; margin-bottom: 4px; }
+  header p { color: var(--muted); margin-bottom: 20px; }
+  header p b { color: #565e6b; font-weight: 600; }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; position: relative; }
+  .swap-mid {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: 42px; height: 42px; border-radius: 50%;
+    border: 1px solid var(--border); background: #fff; cursor: pointer;
+    font-size: 18px; color: var(--primary); z-index: 5;
+    box-shadow: 0 2px 10px rgba(0,0,0,.14); transition: all .15s;
+    display: flex; align-items: center; justify-content: center; padding: 0;
+  }
+  .swap-mid:hover { background: var(--primary); color: #fff; border-color: var(--primary); transform: translate(-50%, -50%) scale(1.08); }
+  .swap-mid:active { transform: translate(-50%, -50%) scale(.95); }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.04);
+  }
+  .card h3 { font-size: 14px; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+  .badge { font-size: 12px; font-weight: normal; color: var(--muted); background: #f0f2f5; border-radius: 10px; padding: 2px 8px; }
+  .card.dragover { border-color: var(--primary); background: #f5f8ff; }
+
+  .dropzone {
+    border: 2px dashed #c9d2e0; border-radius: 10px; padding: 16px 12px;
+    text-align: center; cursor: pointer; transition: all .15s; background: #fafbfd;
+  }
+  .dropzone:hover { border-color: var(--primary); background: #f5f8ff; }
+  .card.dragover .dropzone { border-color: var(--primary); background: #eef4ff; }
+  .dz-icon { font-size: 26px; line-height: 1.2; }
+  .dz-main { font-size: 13.5px; margin-top: 4px; color: #333; }
+  .dz-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .dz-file { display: flex; align-items: center; gap: 8px; text-align: left; }
+  .dz-fileicon { font-size: 20px; }
+  .dz-filename { flex: 1; font-size: 13px; font-weight: 600; color: #2c3e50; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dz-remove {
+    border: none; background: #edf0f4; border-radius: 50%; width: 24px; height: 24px;
+    cursor: pointer; color: #888; font-size: 12px; line-height: 1; flex: none;
+  }
+  .dz-remove:hover { background: #e74c3c; color: #fff; }
+  .pasterow { margin-top: 6px; text-align: right; }
+  .paste-link { font-size: 12px; color: var(--primary); cursor: pointer; user-select: none; }
+  .paste-link:hover { text-decoration: underline; }
+  .btn {
+    border: 1px solid var(--border);
+    background: #fafbfc;
+    border-radius: 8px;
+    padding: 6px 12px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text);
+  }
+  .btn:hover { background: #eef1f5; }
+  .btn-primary {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+    font-weight: 600;
+  }
+  .btn-primary:hover { background: var(--primary-dark); }
+  .btn-primary:disabled { background: #a8bdf9; border-color: #a8bdf9; cursor: not-allowed; }
+  .filename { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+  .hint { font-size: 12px; color: var(--muted); }
+  textarea {
+    width: 100%;
+    height: 190px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    font-size: 13px;
+    line-height: 1.7;
+    resize: vertical;
+    font-family: inherit;
+    outline: none;
+  }
+  textarea:focus { border-color: var(--primary); }
+
+  .actionbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 14px 0;
+    flex-wrap: wrap;
+  }
+  .actionbar .spacer { flex: 1; }
+  label.opt { display: flex; align-items: center; gap: 5px; font-size: 13px; color: #555; cursor: pointer; user-select: none; }
+
+  /* 结果区 */
+  #resultCard { display: none; }
+  #resultCard.show { display: block; }
+  .stats { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .stat {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 6px 14px;
+    background: #fafbfc;
+    font-size: 13px;
+  }
+  .stat b { font-size: 15px; }
+  .stat.add b { color: var(--add-text); }
+  .stat.del b { color: var(--del-text); }
+  .stat.mod b { color: #b8860b; }
+  .stat.sim b { color: var(--primary); }
+
+  .legend { display: flex; gap: 16px; font-size: 12px; color: var(--muted); margin-bottom: 10px; flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+  .legend .l-del i { background: var(--del-strong); }
+  .legend .l-add i { background: var(--add-strong); }
+  .legend .l-mod i { background: #f5e9a9; }
+
+  #diffWrap {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: auto;
+    max-height: 75vh;
+    background: #fff;
+  }
+  .row { display: grid; grid-template-columns: 40px 1fr 40px 1fr; font-size: 14px; line-height: 1.95; font-family: "Songti SC", SimSun, "Microsoft YaHei", serif; }
+  .row .ln {
+    color: #b3bac5;
+    text-align: right;
+    padding: 0 7px;
+    background: #f7f8fa;
+    border-right: 1px solid var(--border);
+    user-select: none;
+    font-size: 11px;
+    line-height: inherit;
+    padding-top: 4px;
+    font-family: "Microsoft YaHei", sans-serif;
+  }
+  .row .cell { padding: 4px 12px; white-space: pre-wrap; word-break: break-all; min-height: 1.95em; }
+  .row.eq-row .cell { color: #444; }
+  .row.del-row { background: var(--row-del); }
+  .row.add-row { background: var(--row-add); }
+  .row.mod-row { background: var(--row-mod); }
+  .row.wrap-row { background: #fdfaf0; }
+  .row.wrap-row .cell { color: #7c6a3f; }
+  .row.flash { animation: flash 1.2s; }
+  @keyframes flash { 0% { background: #fff3bf; } 100% {} }
+  .wdel { background: var(--del-bg); color: var(--del-text); text-decoration: line-through; border-radius: 2px; }
+  .mod-row .wdel, .del-row .wdel { background: var(--del-strong); }
+  .wadd { background: var(--add-bg); color: var(--add-text); border-radius: 2px; font-weight: 600; }
+  .mod-row .wadd, .add-row .wadd { background: var(--add-strong); }
+  .fold {
+    grid-column: 1 / -1;
+    text-align: center;
+    color: var(--muted);
+    background: #f7f8fa;
+    border-top: 1px dashed var(--border);
+    border-bottom: 1px dashed var(--border);
+    font-size: 12px;
+    padding: 5px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .fold:hover { background: #eef1f5; color: var(--primary); }
+  .row.hidden { display: none; }
+
+  #imgPanel {
+    margin-top: 12px;
+    border: 1px solid #cdd8f0;
+    background: #f6f9ff;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 13px;
+    line-height: 1.9;
+  }
+  #imgPanel .imgtitle { font-weight: 600; margin-bottom: 2px; }
+  #imgPanel .ok { color: var(--add-text); }
+  #imgPanel .warn { color: #b8860b; }
+  #imgPanel .muted { color: var(--muted); font-size: 12px; }
+
+  /* 视图切换 */
+  .viewtabs { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; flex-wrap: wrap; }
+  .vtab { border: 1px solid var(--border); background: #fafbfc; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+  .vtab:hover { background: #eef1f5; }
+  .vtab.active { background: var(--primary); color: #fff; border-color: var(--primary); font-weight: 600; }
+
+  /* 原文预览 */
+  #previewWrap { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .pv-col { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: #e9ebee; }
+  .pv-title { background: #fff; border-bottom: 1px solid var(--border); padding: 7px 10px; font-size: 12.5px; font-weight: 600; }
+  .pv-body { height: 72vh; overflow: auto; padding: 8px; }
+  .pv-empty { text-align: center; color: var(--muted); padding: 60px 20px; font-size: 13px; line-height: 2; background: #fff; border-radius: 8px; margin: 8px; }
+  .pv-summary { font-size: 13px; margin-bottom: 8px; padding: 6px 10px; background: #f6f9ff; border: 1px solid #cdd8f0; border-radius: 8px; display: none; }
+  .pv-body img.img-only-a { outline: 3px solid #e74c3c; outline-offset: 2px; }
+  .pv-body img.img-only-b { outline: 3px solid #27ae60; outline-offset: 2px; }
+  /* 图片差异遮罩层 */
+  .img-diff-wrap { position: relative; display: inline-block; max-width: 100%; }
+  .img-diff-mask { position: absolute; inset: 0; pointer-events: none; }
+  .img-diff-mask.only-a { background: rgba(231, 76, 60, 0.30); }
+  .img-diff-mask.only-b { background: rgba(39, 174, 97, 0.30); }
+  .img-diff-tag {
+    position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+    color: #fff; font-size: 12.5px; font-weight: 600; letter-spacing: .5px;
+    padding: 4px 14px; border-radius: 14px; white-space: nowrap;
+    box-shadow: 0 2px 8px rgba(0,0,0,.35); pointer-events: none;
+  }
+  .img-diff-tag.only-a { background: rgba(192, 57, 43, .95); }
+  .img-diff-tag.only-b { background: rgba(30, 142, 62, .95); }
+  .pv-body canvas { max-width: 100%; display: block; margin: 0 auto 14px; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+  /* docx-preview 输出微调 */
+  #pvBodyA.docx-wrapper, #pvBodyB.docx-wrapper { background: transparent; padding: 4px; }
+  #pvBodyA .docx-wrapper, #pvBodyB .docx-wrapper { background: transparent; padding: 0; display: flex; flex-direction: column; align-items: center; }
+  #pvBodyA .docx, #pvBodyB .docx { box-shadow: 0 2px 10px rgba(0,0,0,.15); margin-bottom: 16px; }
+
+  footer { margin-top: 30px; text-align: center; color: var(--muted); font-size: 12px; line-height: 1.8; }
+  #loading { display: none; position: fixed; inset: 0; background: rgba(255,255,255,.7); z-index: 99; }
+  #loading.show { display: flex; align-items: center; justify-content: center; }
+  #loading .box { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 24px 40px; font-size: 14px; color: #555; box-shadow: 0 4px 20px rgba(0,0,0,.08); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>📄 文档比对工具</h1>
+    <p>上传或粘贴两份文档，自动逐行、逐词对比差异并高亮标注。支持 <b>txt / md / docx / pdf</b>，全部在<b>本地浏览器内</b>完成，文档不上传任何服务器。</p>
+  </header>
+
+  <div class="grid2">
+    <div class="card" id="cardA">
+      <h3>原始文档 <span class="badge">旧版本</span></h3>
+      <div class="dropzone" id="dzA" onclick="pickFile('A')">
+        <div class="dz-empty" id="dzEmptyA">
+          <div class="dz-icon">📂</div>
+          <div class="dz-main"><b>点击选择文件</b>，或拖拽文件到此处</div>
+          <div class="dz-sub">支持 txt / md / docx / pdf</div>
+        </div>
+        <div class="dz-file" id="dzFileA" style="display:none">
+          <span class="dz-fileicon">📄</span>
+          <span class="dz-filename" id="dzNameA"></span>
+          <button class="dz-remove" title="移除该文件" onclick="event.stopPropagation(); removeFile('A')">✕</button>
+        </div>
+      </div>
+      <div class="pasterow"><a class="paste-link" id="pasteLinkA" onclick="togglePaste('A')">✎ 改为粘贴文本</a></div>
+      <textarea id="textA" style="display:none" placeholder="在此粘贴原始文档内容"></textarea>
+      <input type="file" id="fileA" accept=".txt,.md,.docx,.pdf,.log,.csv" style="display:none">
+    </div>
+    <div class="card" id="cardB">
+      <h3>修改文档 <span class="badge">新版本</span></h3>
+      <div class="dropzone" id="dzB" onclick="pickFile('B')">
+        <div class="dz-empty" id="dzEmptyB">
+          <div class="dz-icon">📂</div>
+          <div class="dz-main"><b>点击选择文件</b>，或拖拽文件到此处</div>
+          <div class="dz-sub">支持 txt / md / docx / pdf</div>
+        </div>
+        <div class="dz-file" id="dzFileB" style="display:none">
+          <span class="dz-fileicon">📄</span>
+          <span class="dz-filename" id="dzNameB"></span>
+          <button class="dz-remove" title="移除该文件" onclick="event.stopPropagation(); removeFile('B')">✕</button>
+        </div>
+      </div>
+      <div class="pasterow"><a class="paste-link" id="pasteLinkB" onclick="togglePaste('B')">✎ 改为粘贴文本</a></div>
+      <textarea id="textB" style="display:none" placeholder="在此粘贴修改后的文档内容"></textarea>
+      <input type="file" id="fileB" accept=".txt,.md,.docx,.pdf,.log,.csv" style="display:none">
+    </div>
+    <button class="swap-mid" onclick="swapSides()" title="交换两侧">⇄</button>
+  </div>
+
+  <div class="actionbar">
+    <span class="hint" id="autoHint">两侧文档就位后自动开始比对</span>
+    <div class="spacer"></div>
+    <label class="opt"><input type="checkbox" id="optCase"> 忽略大小写</label>
+    <label class="opt"><input type="checkbox" id="optWs" checked> 忽略空白差异</label>
+    <label class="opt"><input type="checkbox" id="optWrap" checked> 忽略换行/分段差异</label>
+    <label class="opt"><input type="checkbox" id="optPara" checked> 按段落合并断行</label>
+    <label class="opt"><input type="checkbox" id="optFold" checked> 隐藏未修改内容</label>
+  </div>
+
+  <div class="card" id="resultCard">
+    <div class="viewtabs">
+      <button id="tabText" class="vtab active" onclick="switchView('text')">📋 文本比对</button>
+      <button id="tabPreview" class="vtab" onclick="switchView('preview')">📄 原文并排预览</button>
+      <span class="hint" id="viewHint">文本比对可精确高亮每个字词；原文预览展示 Word/PDF 原始版式与插图</span>
+    </div>
+    <div id="textPane">
+    <div class="stats" id="stats"></div>
+    <div class="legend">
+      <span class="l-del"><i></i>删除内容（仅旧版有）</span>
+      <span class="l-add"><i></i>新增内容（仅新版有）</span>
+      <span class="l-mod"><i></i>修改内容（红=删，绿=增）</span>
+      <span class="l-wrap"><i style="background:#f5edd2"></i>仅换行/分段位置不同（非内容差异）</span>
+      <span style="margin-left:auto"></span>
+      <button class="btn" onclick="navChange(-1)">▲ 上一处</button>
+      <button class="btn" onclick="navChange(1)">▼ 下一处</button>
+      <button class="btn" onclick="exportHTML()">💾 导出比对结果</button>
+    </div>
+    <div id="diffWrap"></div>
+    <div id="imgPanel" style="display:none"></div>
+    </div><!-- /textPane -->
+
+    <div id="previewPane" style="display:none">
+      <div class="legend" id="pvLegend">
+        <span><i style="background:#e74c3c"></i>红色遮罩：仅原文档有的插图（或已被替换）</span>
+        <span><i style="background:#27ae60"></i>绿色遮罩：仅修改文档有的插图（或替换后的新图）</span>
+      </div>
+      <div id="pvSummary" class="pv-summary"></div>
+      <div id="previewWrap">
+        <div class="pv-col">
+          <div class="pv-title" id="pvTitleA">原始文档</div>
+          <div class="pv-body" id="pvBodyA"></div>
+        </div>
+        <div class="pv-col">
+          <div class="pv-title" id="pvTitleB">修改文档</div>
+          <div class="pv-body" id="pvBodyB"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    比对完全在浏览器本地运行，docx/pdf 解析库已内置在本地，无需联网。<br>
+    算法参考开源项目 diff-match-patch / ClauseDiff 的思路：行级 Patience Diff + 行内逐词比对。
+  </footer>
+</div>
+
+<div id="loading"><div class="box" id="loadingText">正在解析文档…</div></div>
+
+<script>
+/* ================= 工具函数 ================= */
+const $ = id => document.getElementById(id);
+const escapeHTML = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+function normKey(s, opt) {
+  let t = s.trim();
+  if (opt.ws) t = t.replace(/\s+/g, ' ');
+  if (opt.case) t = t.toLowerCase();
+  return t;
+}
+
+/* 行级 Patience Diff：返回操作序列 [{t:'eq'|'rep', a:[s,e), b:[s,e)}] */
+function diffLines(aKeys, bKeys) {
+  const ops = [];
+  function rec(as, ae, bs, be) {
+    if (as >= ae && bs >= be) return;
+    if (as >= ae) { ops.push({t:'rep', a:[as,as], b:[bs,be]}); return; }
+    if (bs >= be) { ops.push({t:'rep', a:[as,ae], b:[bs,bs]}); return; }
+    // 公共前缀
+    let p = 0;
+    while (as+p < ae && bs+p < be && aKeys[as+p] === bKeys[bs+p]) p++;
+    if (p) { ops.push({t:'eq', a:[as, as+p], b:[bs, bs+p]}); as += p; bs += p; }
+    // 公共后缀
+    let s = 0;
+    while (ae-s-1 >= as && be-s-1 >= bs && aKeys[ae-s-1] === bKeys[be-s-1]) s++;
+    const mA = ae - s, mB = be - s;
+    if (as < mA || bs < mB) {
+      // 中间区域：先找唯一公共行作锚点
+      const freqA = new Map(), freqB = new Map();
+      for (let i = as; i < mA; i++) freqA.set(aKeys[i], (freqA.get(aKeys[i])||0) + 1);
+      for (let i = bs; i < mB; i++) freqB.set(bKeys[i], (freqB.get(bKeys[i])||0) + 1);
+      // 锚点 = 两边都恰好出现一次的行，按 A 顺序，求 B 位置的最长递增子序列
+      const cand = [];
+      for (let i = as; i < mA; i++) {
+        const k = aKeys[i];
+        if (freqA.get(k) === 1 && freqB.get(k) === 1) cand.push({ ai: i, bi: null });
+      }
+      const bPos = new Map();
+      for (let i = bs; i < mB; i++) if (!bPos.has(bKeys[i])) bPos.set(bKeys[i], i);
+      cand.forEach(c => c.bi = bPos.get(aKeys[c.ai]));
+      const anchors = patienceLIS(cand);
+      if (anchors.length === 0) {
+        ops.push({t:'rep', a:[as, mA], b:[bs, mB]});
+      } else {
+        let pa = as, pb = bs;
+        for (const anc of anchors) {
+          rec(pa, anc.ai, pb, anc.bi);
+          ops.push({t:'eq', a:[anc.ai, anc.ai+1], b:[anc.bi, anc.bi+1]});
+          pa = anc.ai + 1; pb = anc.bi + 1;
+        }
+        rec(pa, mA, pb, mB);
+      }
+    }
+    if (s) ops.push({t:'eq', a:[mA, ae], b:[mB, be]});
+  }
+  rec(0, aKeys.length, 0, bKeys.length);
+  return ops;
+}
+
+/* 经典 patience 排序求 LIS（按 bi 严格递增），带栈回溯 */
+function patienceLIS(cand) {
+  if (!cand.length) return [];
+  const tails = [], tailIdx = [], prev = new Array(cand.length).fill(-1);
+  for (let i = 0; i < cand.length; i++) {
+    const v = cand[i].bi;
+    let lo = 0, hi = tails.length;
+    while (lo < hi) { const mid = (lo+hi)>>1; if (tails[mid] < v) lo = mid+1; else hi = mid; }
+    if (lo > 0) prev[i] = tailIdx[lo-1];
+    tails[lo] = v; tailIdx[lo] = i;
+  }
+  const out = [];
+  let idx = tailIdx[tails.length-1];
+  while (idx !== -1) { out.push(cand[idx]); idx = prev[idx]; }
+  return out.reverse();
+}
+
+/* 词切分：英文单词/数字整体，中文按字，标点单独，空白段单独 */
+function tokenize(s) {
+  return s.match(/[\u4e00-\u9fff\u3400-\u4dbf]|[A-Za-z0-9_]+(?:[.'-][A-Za-z0-9_]+)*|[^\s\u4e00-\u9fff\u3400-\u4dbfA-Za-z0-9_]+|\s+/g) || [];
+}
+
+/* 把多行文本切成带位置信息的词序列（用于跨行整块比对） */
+function tokenizeLines(lines, opt) {
+  const out = [];
+  lines.forEach((line, li) => {
+    let pos = 0;
+    for (const t of tokenize(line)) {
+      out.push({ tok: t, key: tokKey(t, opt), line: li, start: pos, end: pos + t.length });
+      pos += t.length;
+    }
+  });
+  return out;
+}
+
+function tokKey(t, opt) {
+  let s = t;
+  if (opt.ws) s = s.replace(/\s+/g, '');
+  if (opt.case) s = s.toLowerCase();
+  return s;
+}
+
+/* ================= 智能段落合并 =================
+   把 PDF 提取/硬换行文本中"被拆断的行"重组为完整段落（以 Word 段落的视角显示）：
+   · 空行 = 段落边界
+   · 行尾是句末标点（。！？；：等）= 段落结束
+   · 行首是编号/条款号（第X条、1.2、（一）等）= 新段落开始
+   · 其余情况与上一行合并（中英文之间自动补空格） */
+function joinParas(lines) {
+  const endsPara = s => /[。！？；：!?;:”』」）)．.…、"']$/.test(s.trim());
+  const startsPara = s => /^(第?[一二三四五六七八九十百千0-9]{1,6}[条章节款项、.．）)\]:]|[0-9]+\.[0-9]+|[0-9]+[.、．]\s|[（(][一二三四五六七八九十]+[）)]|[•·■▪◦][\s]?)/.test(s);
+  const out = [];
+  let cur = null;
+  const flush = () => { if (cur !== null) { out.push(cur); cur = null; } };
+  for (const line of lines) {
+    if (line.trim() === '') { flush(); out.push(''); continue; }
+    if (cur === null) { cur = line; continue; }
+    if (endsPara(cur) || startsPara(line)) { flush(); cur = line; }
+    else {
+      const glue = /[A-Za-z0-9,.]$/.test(cur) && /^[A-Za-z0-9]/.test(line) ? ' ' : '';
+      cur += glue + line;
+    }
+  }
+  flush();
+  return out;
+}
+
+/* 合并重叠/相邻的字符区间 */
+function mergeRanges(ranges) {
+  if (!ranges.length) return [];
+  const sorted = ranges.slice().sort((x, y) => x[0] - y[0]);
+  const out = [sorted[0].slice()];
+  for (let i = 1; i < sorted.length; i++) {
+    const last = out[out.length - 1], cur = sorted[i];
+    if (cur[0] <= last[1]) last[1] = Math.max(last[1], cur[1]);
+    else out.push(cur.slice());
+  }
+  return out;
+}
+
+/* 按区间给一行文本加高亮标记 */
+function renderMarked(text, ranges, cls) {
+  if (!ranges || !ranges.length) return escapeHTML(text);
+  const rs = mergeRanges(ranges);
+  let html = '', pos = 0;
+  for (const [s, e] of rs) {
+    if (s > pos) html += escapeHTML(text.slice(pos, s));
+    html += '<span class="' + cls + '">' + escapeHTML(text.slice(s, e)) + '</span>';
+    pos = e;
+  }
+  if (pos < text.length) html += escapeHTML(text.slice(pos));
+  return html;
+}
+
+/* 行内词级 diff（LCS DP），返回 [{o:0等|1删|2增, a:[], b:[]}]；超长行自动降级 */
+function diffWords(aTok, bTok, aNorm, bNorm) {
+  const n = aTok.length, m = bTok.length;
+  if (n * m > 600000) { // 超长行降级：只做公共前后缀，中间整体标为修改
+    const p = commonPre(aNorm, bNorm), s = commonSuf(aNorm, bNorm, p);
+    const out = [];
+    if (p) out.push({o:0, a:[0,p], b:[0,p]});
+    if (p < n - s || p < m - s) out.push({o:1, a:[p, n-s], b:[p, m-s]});
+    if (s) out.push({o:0, a:[n-s, n], b:[m-s, m]});
+    return out;
+  }
+  // LCS DP
+  const w = m + 1;
+  const dp = new Int32Array((n+1) * w);
+  for (let i = n-1; i >= 0; i--) {
+    for (let j = m-1; j >= 0; j--) {
+      dp[i*w + j] = aNorm[i] === bNorm[j] ? dp[(i+1)*w + j+1] + 1 : Math.max(dp[(i+1)*w + j], dp[i*w + j+1]);
+    }
+  }
+  const out = [];
+  let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (aNorm[i] === bNorm[j]) { pushRun(out, 0, i, j, 1); i++; j++; }
+    else if (dp[(i+1)*w + j] >= dp[i*w + j+1]) { pushRun(out, 1, i, j, 1); i++; }
+    else { pushRun(out, 2, i, j, 1); j++; }
+  }
+  while (i < n) { pushRun(out, 1, i, j, 1); i++; }
+  while (j < m) { pushRun(out, 2, i, j, 1); j++; }
+  // 合并相邻同类型 run
+  return mergeRuns(out, aTok, bTok);
+}
+function pushRun(out, o, i, j, len) {
+  const last = out[out.length-1];
+  if (last && last.o === o) {
+    if (o === 0 || o === 1) last.a[1] = i + len;
+    if (o === 0 || o === 2) last.b[1] = j + len;
+  } else out.push({o, a:[i, i+len], b:[j, j+len]});
+}
+function mergeRuns(out, aTok, bTok) { return out; }
+function commonPre(a, b) { let p = 0; while (p < a.length && p < b.length && a[p] === b[p]) p++; return p; }
+function commonSuf(a, b, from) { let s = 0; while (s < a.length-from && s < b.length-from && a[a.length-1-s] === b[b.length-1-s]) s++; return s; }
+
+/* ================= 文件读取 ================= */
+function showLoading(t) { $('loadingText').textContent = t; $('loading').classList.add('show'); }
+function hideLoading() { $('loading').classList.remove('show'); }
+
+function pickFile(side) { $(side === 'A' ? 'fileA' : 'fileB').click(); }
+$('fileA').addEventListener('change', e => readFile(e.target.files[0], 'A'));
+$('fileB').addEventListener('change', e => readFile(e.target.files[0], 'B'));
+// 粘贴文本模式下输入后自动比对
+$('textA').addEventListener('input', autoCompare);
+$('textB').addEventListener('input', autoCompare);
+
+['A','B'].forEach(side => {
+  const card = $('card' + side);
+  card.addEventListener('dragover', e => { e.preventDefault(); card.classList.add('dragover'); });
+  card.addEventListener('dragleave', () => card.classList.remove('dragover'));
+  card.addEventListener('drop', e => {
+    e.preventDefault(); card.classList.remove('dragover');
+    if (e.dataTransfer.files.length) readFile(e.dataTransfer.files[0], side);
+  });
+});
+
+/* 读取队列：连续上传多个文件时依次处理，绝不丢弃 */
+let readQueue = Promise.resolve();
+function readFile(file, side) {
+  if (!file) return;
+  readQueue = readQueue.then(() => doReadFile(file, side)).catch(() => {});
+}
+
+async function doReadFile(file, side) {
+  imgMeta[side] = null;
+  fileBuf[side] = null;
+  try {
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+    let text = '';
+    if (ext === 'docx') {
+      if (typeof mammoth === 'undefined') throw new Error('docx 解析库未能加载（需联网），请将内容复制粘贴到文本框');
+      showLoading('正在解析 Word 文档…');
+      const buf = await file.arrayBuffer();
+      fileBuf[side] = { name: file.name, ext: ext, buf: buf }; // 留存原始文件用于原文预览
+      const r = await mammoth.extractRawText({ arrayBuffer: buf });
+      text = r.value;
+      imgMeta[side] = await extractDocxImages(buf); // 收集内嵌图片校验和
+    } else if (ext === 'pdf') {
+      if (typeof pdfjsLib === 'undefined') throw new Error('PDF 解析库未能加载（需联网），请将内容复制粘贴到文本框');
+      showLoading('正在解析 PDF…');
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'lib/pdf.worker.min.js';
+      const buf = await file.arrayBuffer();
+      fileBuf[side] = { name: file.name, ext: ext, buf: buf };
+      const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf.slice(0)), useSystemFonts: false }).promise;
+      let pages = [];
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const tc = await page.getTextContent();
+        let t = '';
+        tc.items.forEach(it => { t += it.str + (it.hasEOL ? '\n' : ''); });
+        pages.push(t);
+      }
+      text = pages.join('\n');
+    } else if (ext === 'doc') {
+      throw new Error('暂不支持旧版 .doc 格式，请先用 Word 另存为 .docx');
+    } else {
+      showLoading('正在读取文件…');
+      const buf = await file.arrayBuffer();
+      const utf8 = new TextDecoder('utf-8').decode(buf);
+      const bad = (utf8.match(/\uFFFD/g) || []).length;
+      if (bad > utf8.length * 0.001) {
+        try { text = new TextDecoder('gbk').decode(buf); } catch (e) { text = utf8; }
+      } else text = utf8;
+    }
+    $('text' + side).value = text.replace(/\r\n?/g, '\n');
+    setFileChip(side, file.name);
+    // 已上传文件时收起文本框，保持界面干净
+    $('text' + side).style.display = 'none';
+    $('pasteLink' + side).textContent = '✎ 改为粘贴文本';
+    autoCompare();
+  } catch (err) {
+    alert('读取失败：' + err.message);
+  } finally {
+    hideLoading();
+  }
+}
+
+/* 上传区：文件条显示 / 隐藏、粘贴模式切换、移除文件 */
+function setFileChip(side, name) {
+  $('dzEmpty' + side).style.display = 'none';
+  $('dzFile' + side).style.display = 'flex';
+  $('dzName' + side).textContent = name;
+  $('dzName' + side).title = name;
+}
+function resetFileChip(side) {
+  $('dzEmpty' + side).style.display = 'block';
+  $('dzFile' + side).style.display = 'none';
+  $('dzName' + side).textContent = '';
+}
+function togglePaste(side) {
+  const ta = $('text' + side);
+  const show = ta.style.display === 'none';
+  ta.style.display = show ? 'block' : 'none';
+  $('pasteLink' + side).textContent = show ? '✎ 收起文本框' : '✎ 改为粘贴文本';
+  if (show) ta.focus();
+}
+function removeFile(side) {
+  $('text' + side).value = '';
+  $('text' + side).style.display = 'none';
+  $('pasteLink' + side).textContent = '✎ 改为粘贴文本';
+  fileBuf[side] = null;
+  imgMeta[side] = null;
+  resetFileChip(side);
+  $('resultCard').classList.remove('show');
+}
+
+function swapSides() {
+  const t = $('textA').value; $('textA').value = $('textB').value; $('textB').value = t;
+  const nA = fileBuf.A ? fileBuf.A.name : ($('textA').value.trim() ? '粘贴的文本' : '');
+  const nB = fileBuf.B ? fileBuf.B.name : ($('textB').value.trim() ? '粘贴的文本' : '');
+  if (fileBuf.A) setFileChip('B', nA); else resetFileChip('B');
+  if (fileBuf.B) setFileChip('A', nB); else resetFileChip('A');
+  const taD = $('textA').style.display; $('textA').style.display = $('textB').style.display; $('textB').style.display = taD;
+  const im = imgMeta.A; imgMeta.A = imgMeta.B; imgMeta.B = im;
+  const fb = fileBuf.A; fileBuf.A = fileBuf.B; fileBuf.B = fb;
+  autoCompare();
+}
+
+/* 两侧内容就位后自动开始比对（防抖） */
+let autoTimer = null;
+function autoCompare() {
+  clearTimeout(autoTimer);
+  autoTimer = setTimeout(() => {
+    if ($('textA').value.trim() && $('textB').value.trim()) doCompare();
+  }, 300);
+}
+function clearAll() {
+  for (const side of ['A', 'B']) { removeFile(side); }
+}
+
+/* ================= 原文并排预览（Word 原样渲染 / PDF 页面渲染） ================= */
+function switchView(v) {
+  const pv = v === 'preview';
+  $('tabText').classList.toggle('active', !pv);
+  $('tabPreview').classList.toggle('active', pv);
+  $('textPane').style.display = pv ? 'none' : 'block';
+  $('previewPane').style.display = pv ? 'block' : 'none';
+  $('viewHint').textContent = pv
+    ? '左右两侧滚动自动同步；红色遮罩 = 仅原文档的插图，绿色遮罩 = 仅修改文档的插图'
+    : '文本比对可精确高亮每个字词；原文预览展示 Word/PDF 原始版式与插图';
+  if (pv) renderPreview();
+}
+
+async function renderPreview() {
+  showLoading('正在渲染原文…');
+  try {
+    await Promise.all([renderDocPreview('A'), renderDocPreview('B')]);
+    await markPreviewImages();
+  } catch (e) {
+    alert('原文预览失败：' + e.message);
+  } finally { hideLoading(); }
+}
+
+async function renderDocPreview(side) {
+  const body = side === 'A' ? $('pvBodyA') : $('pvBodyB');
+  const title = side === 'A' ? $('pvTitleA') : $('pvTitleB');
+  body.innerHTML = '';
+  const f = fileBuf[side];
+  if (!f || (f.ext !== 'docx' && f.ext !== 'pdf')) {
+    title.textContent = (side === 'A' ? '原始文档' : '修改文档');
+    body.innerHTML = '<div class="pv-empty">该侧未上传 docx / pdf 文件，无法预览原文。<br>直接粘贴的文本请使用"文本比对"视图。</div>';
+    return;
+  }
+  title.textContent = (side === 'A' ? '原始：' : '修改：') + f.name;
+  if (f.ext === 'docx') {
+    if (typeof window.docx === 'undefined' || typeof JSZip === 'undefined')
+      throw new Error('Word 渲染库未能加载');
+    await window.docx.renderAsync(f.buf.slice(0), body, null, {
+      inContainer: true, ignoreWidth: false, ignoreHeight: false,
+      renderHeaders: true, renderFooters: true, renderFootnotes: true,
+      useBase64URL: true // 用 base64 而非 blob URL，保证相同图片的 src 可比对
+    });
+  } else {
+    if (typeof pdfjsLib === 'undefined') throw new Error('PDF 渲染库未能加载');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'lib/pdf.worker.min.js';
+    const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(f.buf.slice(0)), useSystemFonts: false }).promise;
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const vp = page.getViewport({ scale: 1.4 });
+      const canvas = document.createElement('canvas');
+      canvas.width = vp.width; canvas.height = vp.height;
+      body.appendChild(canvas);
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+    }
+  }
+  // 缩放以适应列宽
+  const pageEl = body.querySelector('.docx, canvas');
+  if (pageEl) {
+    const pw = pageEl.getBoundingClientRect ? pageEl.getBoundingClientRect().width : 0;
+    if (pw > 0) body.style.zoom = Math.max(0.4, Math.min(1, (body.clientWidth - 24) / pw));
+  }
+}
+
+/* 给图片套上遮罩 + 差异标签 */
+function tagDiffImg(img, type) { // type: 'only-a' | 'only-b'
+  const wrap = document.createElement('span');
+  wrap.className = 'img-diff-wrap';
+  img.parentNode.insertBefore(wrap, img);
+  wrap.appendChild(img);
+  const mask = document.createElement('span');
+  mask.className = 'img-diff-mask ' + type;
+  const tag = document.createElement('span');
+  tag.className = 'img-diff-tag ' + type;
+  tag.textContent = type === 'only-a' ? '⚠ 此图仅原文档有 · 已被替换或删除' : '🆕 此图仅修改文档有 · 新增或替换后的图';
+  wrap.appendChild(mask);
+  wrap.appendChild(tag);
+}
+
+/* 预览图对比：给"仅一侧存在"的插图加红/绿框 */
+async function markPreviewImages() {
+  const A = fileBuf.A, B = fileBuf.B;
+  const sum = $('pvSummary');
+  const imgsA = [...$('pvBodyA').querySelectorAll('img')];
+  const imgsB = [...$('pvBodyB').querySelectorAll('img')];
+  if (!imgsA.length && !imgsB.length) { sum.style.display = 'none'; return; }
+  if (!A || !B || A.ext !== 'docx' || B.ext !== 'docx') {
+    sum.style.display = 'block';
+    sum.innerHTML = '共 ' + imgsA.length + ' / ' + imgsB.length + ' 张插图。插图内容对比仅支持两侧均为 docx 文件；PDF 预览请肉眼对比页面。';
+    return;
+  }
+  const hA = await Promise.all(imgsA.map(i => sha256hex(new TextEncoder().encode(i.src))));
+  const hB = await Promise.all(imgsB.map(i => sha256hex(new TextEncoder().encode(i.src))));
+  const restB = hB.slice();
+  let same = 0;
+  const onlyA = [], onlyB = [];
+  hA.forEach((h, k) => {
+    const i = restB.indexOf(h);
+    if (i >= 0) { same++; restB.splice(i, 1); imgsA[k].classList.add('img-same'); }
+    else { imgsA[k].classList.add('img-only-a'); onlyA.push(k); tagDiffImg(imgsA[k], 'only-a'); }
+  });
+  hB.forEach((h, k) => {
+    if (restB.includes(h)) {
+      imgsB[k].classList.add('img-only-b');
+      onlyB.push(k);
+      tagDiffImg(imgsB[k], 'only-b');
+    } else imgsB[k].classList.add('img-same');
+  });
+  // 统计
+  const nOnlyA = onlyA.length, nOnlyB = onlyB.length;
+  sum.style.display = 'block';
+  sum.innerHTML = nOnlyA + nOnlyB === 0
+    ? '✅ 原始文档 ' + imgsA.length + ' 张插图与修改文档 ' + imgsB.length + ' 张插图内容完全一致。'
+    : '🖼️ 插图对比：完全一致 ' + same + ' 张；' +
+      (nOnlyA ? '<span style="color:#c0392b">仅原文档 ' + nOnlyA + ' 张（红色遮罩，含被替换的旧图）</span>；' : '') +
+      (nOnlyB ? '<span style="color:#1e8e3e">仅修改文档 ' + nOnlyB + ' 张（绿色遮罩，含替换后的新图）</span>；' : '') +
+      '视觉相同但文件字节不同的图片也会被标出。';
+}
+
+/* 两侧预览滚动同步 */
+(function bindPvScroll() {
+  const a = $('pvBodyA'), b = $('pvBodyB');
+  let lock = false;
+  const sync = (from, to) => {
+    if (lock) return; lock = true;
+    const fMax = from.scrollHeight - from.clientHeight;
+    const tMax = to.scrollHeight - to.clientHeight;
+    to.scrollTop = fMax > 0 ? from.scrollTop / fMax * tMax : 0;
+    requestAnimationFrame(() => lock = false);
+  };
+  a.addEventListener('scroll', () => sync(a, b));
+  b.addEventListener('scroll', () => sync(b, a));
+})();
+
+/* ================= 插图校验（docx 内嵌图片哈希对比） ================= */
+const imgMeta = { A: null, B: null };
+const fileBuf = { A: null, B: null }; // 上传的原始文件缓冲，用于原文预览
+
+async function extractDocxImages(buf) {
+  const b64s = [];
+  await mammoth.convertToHtml({ arrayBuffer: buf }, {
+    // 注意：必须用 mammoth.images.imgElement 包装，直接返回 {src} 会报错
+    convertImage: mammoth.images.imgElement(image =>
+      image.read('base64').then(b64 => {
+        b64s.push(b64);
+        return { src: 'data:image/png;base64,' + b64 };
+      }))
+  });
+  const hashes = await Promise.all(b64s.map(async b64 => {
+    return (await sha256hex(new TextEncoder().encode(b64))).slice(0, 32);
+  }));
+  return { count: hashes.length, hashes };
+}
+
+/* SHA-256：优先用浏览器原生 crypto.subtle（file:// 打开时不可用），降级用纯 JS 实现 */
+async function sha256hex(bytes) {
+  if (window.crypto && crypto.subtle) {
+    try {
+      const d = await crypto.subtle.digest('SHA-256', bytes);
+      return [...new Uint8Array(d)].map(x => x.toString(16).padStart(2, '0')).join('');
+    } catch (e) { /* 降级 */ }
+  }
+  return sha256JS(bytes);
+}
+
+function sha256JS(bytes) {
+  const K = [0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+    0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+    0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+    0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+    0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
+  const H = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
+  const l = bytes.length;
+  const bitLenHi = Math.floor(l / 0x20000000), bitLenLo = (l << 3) >>> 0;
+  const padded = new Uint8Array((((l + 8) >> 6) + 1) << 6);
+  padded.set(bytes);
+  padded[l] = 0x80;
+  const dv = new DataView(padded.buffer);
+  dv.setUint32(padded.length - 8, bitLenHi), dv.setUint32(padded.length - 4, bitLenLo);
+  const w = new Uint32Array(64);
+  const rotr = (x, n) => ((x >>> n) | (x << (32 - n))) >>> 0;
+  for (let off = 0; off < padded.length; off += 64) {
+    for (let i = 0; i < 16; i++) w[i] = dv.getUint32(off + i * 4);
+    for (let i = 16; i < 64; i++) {
+      const s0 = rotr(w[i-15], 7) ^ rotr(w[i-15], 18) ^ (w[i-15] >>> 3);
+      const s1 = rotr(w[i-2], 17) ^ rotr(w[i-2], 19) ^ (w[i-2] >>> 10);
+      w[i] = (w[i-16] + s0 + w[i-7] + s1) >>> 0;
+    }
+    let [a,b,c,d,e,f,g,h] = H;
+    for (let i = 0; i < 64; i++) {
+      const S1 = rotr(e,6) ^ rotr(e,11) ^ rotr(e,25);
+      const ch = (e & f) ^ (~e & g);
+      const t1 = (h + S1 + ch + K[i] + w[i]) >>> 0;
+      const S0 = rotr(a,2) ^ rotr(a,13) ^ rotr(a,22);
+      const maj = (a & b) ^ (a & c) ^ (b & c);
+      const t2 = (S0 + maj) >>> 0;
+      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+    }
+    H[0]=(H[0]+a)>>>0; H[1]=(H[1]+b)>>>0; H[2]=(H[2]+c)>>>0; H[3]=(H[3]+d)>>>0;
+    H[4]=(H[4]+e)>>>0; H[5]=(H[5]+f)>>>0; H[6]=(H[6]+g)>>>0; H[7]=(H[7]+h)>>>0;
+  }
+  return H.map(x => x.toString(16).padStart(8, '0')).join('');
+}
+
+function renderImgPanel() {
+  const el = $('imgPanel');
+  const A = imgMeta.A, B = imgMeta.B;
+  if (!A && !B) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  const nA = A ? A.count : 0, nB = B ? B.count : 0;
+  const restB = B ? B.hashes.slice() : [];
+  let same = 0; const onlyA = [];
+  for (const h of (A ? A.hashes : [])) {
+    const i = restB.indexOf(h);
+    if (i >= 0) { same++; restB.splice(i, 1); } else onlyA.push(h);
+  }
+  const onlyB = restB;
+  const diffCnt = onlyA.length + onlyB.length;
+  let html = '<div class="imgtitle">🖼️ 插图校验（SHA-256 内容指纹，视觉相同的图片只要文件字节不同也会被识别）</div>';
+  html += '<div>原始文档嵌入图片 <b>' + nA + '</b> 张，修改文档嵌入图片 <b>' + nB + '</b> 张；内容完全一致的图片 <b class="ok">' + same + '</b> 张。</div>';
+  if (diffCnt === 0) {
+    html += '<div class="ok">✅ 所有嵌入图片的文件内容完全一致，无图片差异。</div>';
+  } else {
+    html += '<div class="warn">⚠️ 检测到 ' + diffCnt + ' 张图片不一致或仅一方存在：';
+    if (onlyA.length) html += '<br>　· 仅原始版有 ' + onlyA.length + ' 张（校验和 ' + onlyA.map(h => h.slice(0, 12) + '…').join('、') + '）';
+    if (onlyB.length) html += '<br>　· 仅修改版有 ' + onlyB.length + ' 张（校验和 ' + onlyB.map(h => h.slice(0, 12) + '…').join('、') + '）';
+    html += '<br>　· 数量相等部分通常为“同位置图片被替换”（即使肉眼看不出差别）；数量不等则为图片增删。</div>';
+  }
+  if (!A || !B) html += '<div class="muted">提示：只有一侧为 docx 文件时可显示图片数量，无法交叉比对。</div>';
+  el.innerHTML = html;
+  el.style.display = 'block';
+}
+/* ================= 比对主流程 ================= */
+let changeRows = []; // 所有变更行 DOM，用于导航
+
+function doCompare() {
+  const ta = $('textA').value, tb = $('textB').value;
+  if (!ta.trim() || !tb.trim()) { alert('请先在两侧都上传文件或粘贴内容后再比对'); return; }
+  const opt = { case: $('optCase').checked, ws: $('optWs').checked };
+  let a = ta.split('\n'), b = tb.split('\n');
+  // 按段落合并断行：把 PDF 提取等产生的"一行一句"重组为完整段落，以段落为显示单元
+  if ($('optPara').checked) { a = joinParas(a); b = joinParas(b); }
+  const aKeys = a.map(l => normKey(l, opt)), bKeys = b.map(l => normKey(l, opt));
+
+  const ops = diffLines(aKeys, bKeys);
+  const ignoreWrap = $('optWrap').checked;
+
+  /* 渲染：整块做词级比对（跨行对齐），能正确处理"同一段话两边换行/分段位置不同"的情况，
+     不会因为一行错开就把整段标红 */
+  const wrapEl = $('diffWrap');
+  wrapEl.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  const stats = { add: 0, del: 0, blocks: 0, wrap: 0, addTok: 0, delTok: 0, eqTok: 0 };
+  changeRows = [];
+
+  const countTok = s => tokenize(s).filter(t => t.trim()).length;
+
+  function makeRow(type, lnA, lnB, leftHTML, rightHTML) {
+    const row = document.createElement('div');
+    row.className = 'row ' + type;
+    row.dataset.type = (type === 'eq-row') ? 'eq' : (type === 'wrap-row') ? 'wrap' : 'chg';
+    row.innerHTML = '<div class="ln">' + lnA + '</div><div class="cell">' + leftHTML +
+                    '</div><div class="ln">' + lnB + '</div><div class="cell">' + rightHTML + '</div>';
+    frag.appendChild(row);
+    return row;
+  }
+
+  for (const op of ops) {
+    if (op.t === 'eq') {
+      for (let i = 0; i < op.a[1] - op.a[0]; i++) {
+        const line = a[op.a[0] + i];
+        stats.eqTok += countTok(line);
+        makeRow('eq-row', op.a[0] + i + 1, op.b[0] + i + 1, escapeHTML(line), escapeHTML(line));
+      }
+      continue;
+    }
+
+    const leftLines = a.slice(op.a[0], op.a[1]);
+    const rightLines = b.slice(op.b[0], op.b[1]);
+    const strip = s => s.replace(/\s+/g, '');
+    const isWrapOnly = strip(leftLines.join('')) === strip(rightLines.join(''));
+
+    let marksA = leftLines.map(() => []), marksB = rightLines.map(() => []);
+    let dTok = 0, aTok = 0;
+    if (!isWrapOnly) {
+      const ta = tokenizeLines(leftLines, opt), tb = tokenizeLines(rightLines, opt);
+      const tops = diffLines(ta.map(t => t.key), tb.map(t => t.key));
+      for (const t of tops) {
+        if (t.t !== 'rep') {
+          for (let i = t.a[0]; i < t.a[1]; i++) if (ta[i].tok.trim()) stats.eqTok++; // 块内相同的词计入相似度
+          continue;
+        }
+        for (let i = t.a[0]; i < t.a[1]; i++) {
+          const tk = ta[i];
+          marksA[tk.line].push([tk.start, tk.end]);
+          if (tk.tok.trim()) dTok++;
+        }
+        for (let j = t.b[0]; j < t.b[1]; j++) {
+          const tk = tb[j];
+          marksB[tk.line].push([tk.start, tk.end]);
+          if (tk.tok.trim()) aTok++;
+        }
+      }
+    }
+
+    const hasContent = dTok + aTok > 0;
+    stats.delTok += dTok;
+    stats.addTok += aTok;
+    const n = Math.max(leftLines.length, rightLines.length);
+    const blockRows = [];
+
+    for (let i = 0; i < n; i++) {
+      const hasL = i < leftLines.length, hasR = i < rightLines.length;
+      const lLine = hasL ? leftLines[i] : null, rLine = hasR ? rightLines[i] : null;
+      const lMarks = hasL ? marksA[i] : [], rMarks = hasR ? marksB[i] : [];
+      let type, lh, rh;
+
+      if (isWrapOnly || (!hasContent && hasL && hasR)) {
+        // 仅仅是换行/分段位置不同：不标红绿
+        type = isWrapOnly ? (ignoreWrap ? 'eq-row' : 'wrap-row') : 'eq-row';
+        lh = escapeHTML(lLine || ''); rh = escapeHTML(rLine || '');
+        if (type === 'eq-row') stats.eqTok += countTok(lLine || '');
+      } else if (hasL && hasR) {
+        type = (lMarks.length || rMarks.length) ? 'mod-row' : 'eq-row';
+        lh = renderMarked(lLine, lMarks, 'wdel');
+        rh = renderMarked(rLine, rMarks, 'wadd');
+        if (type === 'eq-row') stats.eqTok += countTok(lLine);
+      } else if (hasL) {
+        const empty = !lLine.trim();
+        type = empty ? 'eq-row' : 'del-row';
+        lh = empty ? '' : '<span class="wdel">' + escapeHTML(lLine) + '</span>';
+        rh = '';
+        if (!empty) stats.del++;
+      } else {
+        const empty = !rLine.trim();
+        type = empty ? 'eq-row' : 'add-row';
+        rh = empty ? '' : '<span class="wadd">' + escapeHTML(rLine) + '</span>';
+        lh = '';
+        if (!empty) stats.add++;
+      }
+
+      const row = makeRow(type, hasL ? op.a[0] + i + 1 : '', hasR ? op.b[0] + i + 1 : '', lh, rh);
+      if (type === 'mod-row' || type === 'del-row' || type === 'add-row') blockRows.push(row);
+    }
+
+    if (blockRows.length) { stats.blocks++; changeRows.push(...blockRows); }
+    if (isWrapOnly && strip(leftLines.join('')) !== '') stats.wrap++;
+  }
+
+  wrapEl.appendChild(frag);
+  renderStats(stats);
+  renderImgPanel();
+  if ($('optFold').checked) foldUnchanged();
+  $('resultCard').classList.add('show');
+  $('resultCard').scrollIntoView({ behavior: 'smooth' });
+}
+
+function renderStats(st) {
+  const sim = st.eqTok / Math.max(1, st.eqTok + st.delTok + st.addTok) * 100;
+  const ignoredWrap = $('optWrap').checked;
+  $('stats').innerHTML =
+    '<div class="stat sim">相似度 <b>' + sim.toFixed(1) + '%</b></div>' +
+    '<div class="stat mod">内容差异 <b>' + st.blocks + '</b> 处</div>' +
+    '<div class="stat">换行/分段差异 <b>' + st.wrap + '</b> 处' + (st.wrap && ignoredWrap ? '（已忽略）' : '') + '</div>' +
+    '<div class="stat add">新增 <b>' + st.add + '</b> 行 / 约 ' + st.addTok + ' 词</div>' +
+    '<div class="stat del">删除 <b>' + st.del + '</b> 行 / 约 ' + st.delTok + ' 词</div>';
+}
+
+/* 折叠未修改行（保留变更处上下 2 行） */
+function foldUnchanged() {
+  const rows = [...$('diffWrap').querySelectorAll('.row')];
+  const isChange = r => r.dataset.type === 'chg';
+  rows.forEach(r => r.classList.remove('hidden'));
+  $('diffWrap').querySelectorAll('.fold').forEach(f => f.remove());
+
+  let i = 0;
+  const CONTEXT = 2;
+  while (i < rows.length) {
+    if (rows[i].dataset.type !== 'eq') { i++; continue; }
+    let j = i;
+    while (j < rows.length && rows[j].dataset.type === 'eq') j++;
+    // 区间 [i, j) 是相同行；检查前后 CONTEXT 内是否有变更行
+    const nearChange =
+      rows.slice(Math.max(0, i - CONTEXT), i).some(isChange) ||
+      rows.slice(j, Math.min(rows.length, j + CONTEXT)).some(isChange);
+    if (!nearChange && j - i > 6) {
+      const foldRow = document.createElement('div');
+      foldRow.className = 'fold';
+      foldRow.textContent = '⋯ 已折叠 ' + (j - i) + ' 行相同内容，点击展开 ⋯';
+      foldRow.onclick = () => {
+        rows.slice(i, j).forEach(r => r.classList.toggle('hidden'));
+        foldRow.remove();
+      };
+      rows[i].parentNode.insertBefore(foldRow, rows[i]);
+      rows.slice(i, j).forEach(r => r.classList.add('hidden'));
+    }
+    i = j;
+  }
+}
+
+/* 变更导航 */
+let navIdx = -1;
+function navChange(dir) {
+  if (!changeRows.length) { alert('没有发现任何差异，两份文档完全一致 🎉'); return; }
+  navIdx = (navIdx + dir + changeRows.length) % changeRows.length;
+  changeRows.forEach(r => r.classList.remove('flash'));
+  const row = changeRows[navIdx];
+  row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  row.classList.add('flash');
+}
+
+/* 导出结果为 HTML */
+function exportHTML() {
+  const styles = document.querySelector('style').outerHTML;
+  const stats = $('stats').outerHTML;
+  const legend = document.querySelector('.legend').cloneNode(true);
+  legend.querySelectorAll('button').forEach(b => b.remove());
+  const content = $('diffWrap').innerHTML;
+  const html = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>文档比对结果</title>' +
+    styles + '</head><body><div class="wrap" style="padding:24px">' +
+    '<h1 style="font-size:20px;margin-bottom:14px">📄 文档比对结果 <small style="color:#8a919c;font-size:13px">' +
+    new Date().toLocaleString('zh-CN') + '</small></h1>' + stats +
+    '<div class="legend">' + legend.innerHTML + '</div>' +
+    ($('imgPanel').style.display !== 'none' ? $('imgPanel').outerHTML : '') +
+    '<div id="diffWrap" style="max-height:none">' + content + '</div></div></body></html>';
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = '比对结果_' + Date.now() + '.html';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+$('optPara').addEventListener('change', () => {
+  if ($('resultCard').classList.contains('show')) doCompare();
+});
+
+$('optWrap').addEventListener('change', () => {
+  if ($('resultCard').classList.contains('show')) doCompare();
+});
+
+$('optFold').addEventListener('change', () => {
+  if ($('optFold').checked) foldUnchanged();
+  else {
+    $('diffWrap').querySelectorAll('.row.hidden').forEach(r => r.classList.remove('hidden'));
+    $('diffWrap').querySelectorAll('.fold').forEach(f => f.remove());
+  }
+});
+</script>
+</body>
+</html>
