@@ -225,6 +225,18 @@
   .pv-summary { font-size: 13px; margin-bottom: 8px; padding: 6px 10px; background: #f6f9ff; border: 1px solid #cdd8f0; border-radius: 8px; display: none; }
   .pv-body img.img-only-a { outline: 3px solid #e74c3c; outline-offset: 2px; }
   .pv-body img.img-only-b { outline: 3px solid #27ae60; outline-offset: 2px; }
+  .xlsx-sheet-tabs { display: flex; gap: 4px; position: sticky; top: -8px; z-index: 5; padding: 6px 8px; background: #f3f5f8; border-bottom: 1px solid var(--border); }
+  .xlsx-sheet-tab { border: 1px solid transparent; border-radius: 5px 5px 0 0; background: transparent; padding: 5px 10px; cursor: pointer; color: var(--muted); font-size: 12px; }
+  .xlsx-sheet-tab.active { background: #fff; border-color: var(--border); border-bottom-color: #fff; color: var(--text); font-weight: 600; }
+  .xlsx-grid { width: max-content; min-width: 100%; border-collapse: collapse; table-layout: fixed; background: #fff; color: var(--text); font-size: 12px; }
+  .xlsx-grid th, .xlsx-grid td { border: 1px solid #d5d9de; padding: 6px 8px; min-width: 52px; vertical-align: middle; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .xlsx-grid .xlsx-corner, .xlsx-grid .xlsx-col-header, .xlsx-grid .xlsx-row-header { background: #f1f3f5; color: #626a75; font-weight: normal; text-align: center; }
+  .xlsx-grid .xlsx-col-header { position: sticky; top: 28px; z-index: 3; }
+  .xlsx-grid .xlsx-row-header { position: sticky; left: 0; z-index: 2; }
+  .xlsx-grid .xlsx-corner { position: sticky; top: 28px; left: 0; z-index: 4; }
+  .xlsx-grid td.xlsx-cell-removed { background: var(--del-bg); color: var(--del-text); }
+  .xlsx-grid td.xlsx-cell-added { background: var(--add-bg); color: var(--add-text); }
+  .xlsx-preview-note { padding: 8px; color: var(--muted); font-size: 12px; text-align: center; }
   /* 图片差异遮罩层 */
   .img-diff-wrap { position: relative; display: inline-block; max-width: 100%; }
   .img-diff-mask { position: absolute; inset: 0; pointer-events: none; }
@@ -255,7 +267,7 @@
 <div class="wrap">
   <header>
     <h1>📄 文档比对工具</h1>
-    <p>上传或粘贴两份文档，自动逐行、逐词对比差异并高亮标注。支持 <b>txt / md / docx / pdf</b>，全部在<b>本地浏览器内</b>完成，文档不上传任何服务器。</p>
+    <p>上传或粘贴两份文档，自动逐行、逐词对比差异并高亮标注。支持 <b>txt / md / docx / pdf / xlsx</b>，全部在<b>本地浏览器内</b>完成，文档不上传任何服务器。</p>
   </header>
 
   <div class="grid2">
@@ -265,7 +277,7 @@
         <div class="dz-empty" id="dzEmptyA">
           <div class="dz-icon">📂</div>
           <div class="dz-main"><b>点击选择文件</b>，或拖拽文件到此处</div>
-          <div class="dz-sub">支持 txt / md / docx / pdf</div>
+          <div class="dz-sub">支持 txt / md / docx / pdf / xlsx</div>
         </div>
         <div class="dz-file" id="dzFileA" style="display:none">
           <span class="dz-fileicon">📄</span>
@@ -275,7 +287,7 @@
       </div>
       <div class="pasterow"><a class="paste-link" id="pasteLinkA" onclick="togglePaste('A')">✎ 改为粘贴文本</a></div>
       <textarea id="textA" style="display:none" placeholder="在此粘贴原始文档内容"></textarea>
-      <input type="file" id="fileA" accept=".txt,.md,.docx,.pdf,.log,.csv" style="display:none">
+      <input type="file" id="fileA" accept=".txt,.md,.docx,.pdf,.xlsx,.log,.csv" style="display:none">
     </div>
     <div class="card" id="cardB">
       <h3>修改文档 <span class="badge">新版本</span></h3>
@@ -283,7 +295,7 @@
         <div class="dz-empty" id="dzEmptyB">
           <div class="dz-icon">📂</div>
           <div class="dz-main"><b>点击选择文件</b>，或拖拽文件到此处</div>
-          <div class="dz-sub">支持 txt / md / docx / pdf</div>
+          <div class="dz-sub">支持 txt / md / docx / pdf / xlsx</div>
         </div>
         <div class="dz-file" id="dzFileB" style="display:none">
           <span class="dz-fileicon">📄</span>
@@ -293,7 +305,7 @@
       </div>
       <div class="pasterow"><a class="paste-link" id="pasteLinkB" onclick="togglePaste('B')">✎ 改为粘贴文本</a></div>
       <textarea id="textB" style="display:none" placeholder="在此粘贴修改后的文档内容"></textarea>
-      <input type="file" id="fileB" accept=".txt,.md,.docx,.pdf,.log,.csv" style="display:none">
+      <input type="file" id="fileB" accept=".txt,.md,.docx,.pdf,.xlsx,.log,.csv" style="display:none">
     </div>
     <button class="swap-mid" onclick="swapSides()" title="交换两侧">⇄</button>
   </div>
@@ -350,7 +362,7 @@
   </div>
 
   <footer>
-    比对完全在浏览器本地运行，docx/pdf 解析库已内置在本地，无需联网。<br>
+    比对完全在浏览器本地运行，docx/pdf/xlsx 解析均在本地完成，无需联网。<br>
     算法参考开源项目 diff-match-patch / ClauseDiff 的思路：行级 Patience Diff + 行内逐词比对。<br>
     <span class="ver">DocDiff 版本 <span id="appVer">dev</span></span>
   </footer>
@@ -582,6 +594,107 @@ function readFile(file, side) {
   readQueue = readQueue.then(() => doReadFile(file, side)).catch(() => {});
 }
 
+async function extractXlsxWorkbook(buf) {
+  if (typeof JSZip === 'undefined') throw new Error('Excel 解析库未能加载，请将内容复制粘贴到文本框');
+  const zip = await JSZip.loadAsync(buf);
+  const mainNs = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+  const relNs = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+
+  async function readXml(path) {
+    const entry = zip.file(path);
+    if (!entry) throw new Error('Excel 文件缺少必要内容：' + path);
+    const xml = new DOMParser().parseFromString(await entry.async('string'), 'application/xml');
+    if (xml.getElementsByTagName('parsererror').length) throw new Error('Excel 文件中的 XML 无法解析');
+    return xml;
+  }
+  function elements(node, localName, ns) {
+    return [...node.getElementsByTagNameNS(ns, localName)];
+  }
+  function textRuns(node) {
+    return elements(node, 't', mainNs).map(t => t.textContent).join('');
+  }
+
+  const workbook = await readXml('xl/workbook.xml');
+  const relationships = await readXml('xl/_rels/workbook.xml.rels');
+  const targets = new Map(elements(relationships, 'Relationship', '*').map(rel => [
+    rel.getAttribute('Id'), rel.getAttribute('Target')
+  ]));
+  const sharedEntry = zip.file('xl/sharedStrings.xml');
+  const sharedStrings = sharedEntry
+    ? elements(await readXml('xl/sharedStrings.xml'), 'si', mainNs).map(textRuns)
+    : [];
+  const sheets = elements(workbook, 'sheet', mainNs);
+  if (!sheets.length) throw new Error('Excel 文件中没有工作表');
+
+  function worksheetPath(target) {
+    const parts = (target.startsWith('/') ? target.slice(1) : 'xl/' + target).split('/');
+    const normalized = [];
+    parts.forEach(part => {
+      if (part === '..') normalized.pop();
+      else if (part && part !== '.') normalized.push(part);
+    });
+    return normalized.join('/');
+  }
+  function columnIndex(reference) {
+    const letters = /^([A-Z]+)/i.exec(reference || '');
+    if (!letters) return -1;
+    return [...letters[1].toUpperCase()].reduce((index, letter) =>
+      index * 26 + letter.charCodeAt(0) - 64, 0) - 1;
+  }
+  function cellText(cell) {
+    const type = cell.getAttribute('t');
+    const value = elements(cell, 'v', mainNs)[0];
+    if (type === 'inlineStr') return textRuns(cell);
+    if (!value) return '';
+    if (type === 's') return sharedStrings[Number(value.textContent)] || '';
+    if (type === 'b') return value.textContent === '1' ? 'TRUE' : 'FALSE';
+    return value.textContent;
+  }
+
+  const output = [];
+  const parsedSheets = [];
+  for (const sheet of sheets) {
+    const name = sheet.getAttribute('name');
+    const relationshipId = sheet.getAttributeNS(relNs, 'id');
+    const target = targets.get(relationshipId);
+    if (!target) throw new Error('无法定位工作表：' + name);
+    const worksheet = await readXml(worksheetPath(target));
+    let maxColumn = -1;
+    const rows = elements(worksheet, 'row', mainNs).map((row, rowOffset) => {
+      const cells = [];
+      let nextColumn = 0;
+      elements(row, 'c', mainNs).forEach(cell => {
+        const index = columnIndex(cell.getAttribute('r'));
+        const column = index >= 0 ? index : nextColumn;
+        cells[column] = { value: cellText(cell), style: cell.getAttribute('s') || '0' };
+        maxColumn = Math.max(maxColumn, column);
+        nextColumn = column + 1;
+      });
+      return {
+        number: Number(row.getAttribute('r')) || rowOffset + 1,
+        height: Number(row.getAttribute('ht')) || null,
+        hidden: row.getAttribute('hidden') === '1',
+        cells: cells
+      };
+    });
+    const textRows = rows.map(row => {
+      const lastColumn = row.cells.length - 1;
+      return Array.from({ length: lastColumn + 1 }, (_, index) =>
+        row.cells[index] ? row.cells[index].value : '').join('\t');
+    });
+    const columns = elements(worksheet, 'col', mainNs).map(col => ({
+      min: Number(col.getAttribute('min')) - 1,
+      max: Number(col.getAttribute('max')) - 1,
+      width: Number(col.getAttribute('width')) || null,
+      hidden: col.getAttribute('hidden') === '1'
+    }));
+    const merges = elements(worksheet, 'mergeCell', mainNs).map(merge => merge.getAttribute('ref'));
+    output.push('【工作表：' + name + '】\n' + textRows.join('\n'));
+    parsedSheets.push({ name, rows, columns, merges, maxColumn });
+  }
+  return { text: output.join('\n\n'), sheets: parsedSheets };
+}
+
 async function doReadFile(file, side) {
   imgMeta[side] = null;
   fileBuf[side] = null;
@@ -612,6 +725,11 @@ async function doReadFile(file, side) {
         pages.push(t);
       }
       text = pages.join('\n');
+    } else if (ext === 'xlsx') {
+      showLoading('正在解析 Excel 工作簿…');
+      const workbook = await extractXlsxWorkbook(await file.arrayBuffer());
+      text = workbook.text;
+      fileBuf[side] = { name: file.name, ext: ext, workbook: workbook };
     } else if (ext === 'doc') {
       throw new Error('暂不支持旧版 .doc 格式，请先用 Word 另存为 .docx');
     } else {
@@ -705,6 +823,8 @@ function switchView(v) {
 async function renderPreview() {
   showLoading('正在渲染原文…');
   try {
+    $('pvLegend').style.display =
+      (fileBuf.A && fileBuf.A.ext === 'docx') || (fileBuf.B && fileBuf.B.ext === 'docx') ? 'flex' : 'none';
     await Promise.all([renderDocPreview('A'), renderDocPreview('B')]);
     await markPreviewImages();
   } catch (e) {
@@ -717,12 +837,22 @@ async function renderDocPreview(side) {
   const title = side === 'A' ? $('pvTitleA') : $('pvTitleB');
   body.innerHTML = '';
   const f = fileBuf[side];
-  if (!f || (f.ext !== 'docx' && f.ext !== 'pdf')) {
+  if (!f) {
     title.textContent = (side === 'A' ? '原始文档' : '修改文档');
     body.innerHTML = '<div class="pv-empty">该侧未上传 docx / pdf 文件，无法预览原文。<br>直接粘贴的文本请使用"文本比对"视图。</div>';
     return;
   }
   title.textContent = (side === 'A' ? '原始：' : '修改：') + f.name;
+  if (f.ext === 'xlsx') {
+    const otherFile = fileBuf[side === 'A' ? 'B' : 'A'];
+    const otherWorkbook = otherFile && otherFile.ext === 'xlsx' ? otherFile.workbook : null;
+    renderXlsxPreview(body, f.workbook, otherWorkbook, side);
+    return;
+  }
+  if (f.ext !== 'docx' && f.ext !== 'pdf') {
+    body.innerHTML = '<div class="pv-empty">该文件暂不支持原文版式预览。<br>请在“文本比对”视图查看内容。</div>';
+    return;
+  }
   if (f.ext === 'docx') {
     if (typeof window.docx === 'undefined' || typeof JSZip === 'undefined')
       throw new Error('Word 渲染库未能加载');
@@ -750,6 +880,204 @@ async function renderDocPreview(side) {
     const pw = pageEl.getBoundingClientRect ? pageEl.getBoundingClientRect().width : 0;
     if (pw > 0) body.style.zoom = Math.max(0.4, Math.min(1, (body.clientWidth - 24) / pw));
   }
+}
+
+function excelColumnName(index) {
+  let name = '';
+  for (let value = index + 1; value > 0; value = Math.floor((value - 1) / 26)) {
+    name = String.fromCharCode((value - 1) % 26 + 65) + name;
+  }
+  return name;
+}
+
+function xlsxSerialColumn(sheet) {
+  if (!sheet) return -1;
+  const serialHeaders = new Set(['序号', '编号', '行号', '序列号', 'no', 'id']);
+  for (const row of sheet.rows.slice(0, 10)) {
+    for (let column = 0; column < row.cells.length; column++) {
+      const value = row.cells[column] ? row.cells[column].value.trim().toLowerCase() : '';
+      if (serialHeaders.has(value.replace(/[.：:]/g, ''))) return column;
+    }
+  }
+  return -1;
+}
+
+function xlsxRowKey(row, maxColumn, serialColumn) {
+  const values = Array.from({ length: maxColumn + 1 }, (_, column) => {
+    if (column === serialColumn) return '';
+    const cell = row.cells[column];
+    return cell ? cell.value.trim().replace(/\s+/g, ' ') : '';
+  });
+  while (values.length && !values[values.length - 1]) values.pop();
+  return JSON.stringify(values);
+}
+
+function alignXlsxRows(oldSheet, newSheet) {
+  const serialColumn = xlsxSerialColumn(oldSheet) >= 0
+    ? xlsxSerialColumn(oldSheet) : xlsxSerialColumn(newSheet);
+  if (!oldSheet) return { rows: newSheet.rows.map(row => ({ oldRow: null, newRow: row })), serialColumn };
+  if (!newSheet) return { rows: oldSheet.rows.map(row => ({ oldRow: row, newRow: null })), serialColumn };
+
+  const maxColumn = Math.max(oldSheet.maxColumn, newSheet.maxColumn);
+  const oldKeys = oldSheet.rows.map(row => xlsxRowKey(row, maxColumn, serialColumn));
+  const newKeys = newSheet.rows.map(row => xlsxRowKey(row, maxColumn, serialColumn));
+  const aligned = [];
+  for (const operation of diffLines(oldKeys, newKeys)) {
+    const oldCount = operation.a[1] - operation.a[0];
+    const newCount = operation.b[1] - operation.b[0];
+    const pairedCount = Math.min(oldCount, newCount);
+    for (let offset = 0; offset < pairedCount; offset++) {
+      aligned.push({
+        oldRow: oldSheet.rows[operation.a[0] + offset],
+        newRow: newSheet.rows[operation.b[0] + offset]
+      });
+    }
+    for (let offset = pairedCount; offset < oldCount; offset++) {
+      aligned.push({ oldRow: oldSheet.rows[operation.a[0] + offset], newRow: null });
+    }
+    for (let offset = pairedCount; offset < newCount; offset++) {
+      aligned.push({ oldRow: null, newRow: newSheet.rows[operation.b[0] + offset] });
+    }
+  }
+  return { rows: aligned, serialColumn };
+}
+
+function renderXlsxPreview(body, workbook, otherWorkbook, side) {
+  if (!workbook || !workbook.sheets.length) {
+    body.innerHTML = '<div class="pv-empty">Excel 工作簿中没有可预览的工作表。</div>';
+    return;
+  }
+  let activeSheet = 0;
+  const tabs = document.createElement('div');
+  tabs.className = 'xlsx-sheet-tabs';
+  const content = document.createElement('div');
+  const note = document.createElement('div');
+  note.className = 'xlsx-preview-note';
+  note.textContent = '按行内容对齐后标记差异：红色表示原内容被删除或替换，绿色表示新增或修改后的内容；复杂样式、图表和图片暂不支持。';
+
+  function showSheet(index) {
+    activeSheet = index;
+    tabs.querySelectorAll('.xlsx-sheet-tab').forEach((tab, tabIndex) =>
+      tab.classList.toggle('active', tabIndex === index));
+    while (content.firstChild) content.removeChild(content.firstChild);
+    const sheet = workbook.sheets[index];
+    const peerSheet = otherWorkbook && (
+      otherWorkbook.sheets.find(item => item.name === sheet.name) ||
+      (otherWorkbook.sheets.length === workbook.sheets.length ? otherWorkbook.sheets[index] : null)
+    );
+    const aligned = alignXlsxRows(side === 'A' ? sheet : peerSheet, side === 'A' ? peerSheet : sheet);
+    const alignedRows = aligned.rows;
+    const maxColumn = Math.max(sheet.maxColumn, peerSheet ? peerSheet.maxColumn : -1);
+    const mergeStarts = new Map();
+    const mergedCells = new Set();
+    sheet.merges.forEach(reference => {
+      const match = /^([A-Z]+)(\d+):([A-Z]+)(\d+)$/i.exec(reference);
+      if (!match) return;
+      const startColumn = columnIndexFromLetters(match[1]);
+      const startRow = Number(match[2]);
+      const endColumn = columnIndexFromLetters(match[3]);
+      const endRow = Number(match[4]);
+      mergeStarts.set(startRow + ':' + startColumn, {
+        rows: endRow - startRow + 1,
+        columns: endColumn - startColumn + 1
+      });
+      for (let row = startRow; row <= endRow; row++) {
+        for (let column = startColumn; column <= endColumn; column++) {
+          if (row !== startRow || column !== startColumn) mergedCells.add(row + ':' + column);
+        }
+      }
+    });
+
+    const table = document.createElement('table');
+    table.className = 'xlsx-grid';
+    const columnGroup = document.createElement('colgroup');
+    const rowNumberCol = document.createElement('col');
+    rowNumberCol.style.width = '48px';
+    columnGroup.appendChild(rowNumberCol);
+    for (let column = 0; column <= maxColumn; column++) {
+      const columnDef = sheet.columns.find(item => column >= item.min && column <= item.max);
+      const col = document.createElement('col');
+      if (columnDef && columnDef.hidden) col.style.display = 'none';
+      else if (columnDef && columnDef.width) col.style.width = Math.max(36, columnDef.width * 7 + 5) + 'px';
+      else col.style.width = '72px';
+      columnGroup.appendChild(col);
+    }
+    table.appendChild(columnGroup);
+
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    const corner = document.createElement('th');
+    corner.className = 'xlsx-corner';
+    headerRow.appendChild(corner);
+    for (let column = 0; column <= maxColumn; column++) {
+      const th = document.createElement('th');
+      th.className = 'xlsx-col-header';
+      th.textContent = excelColumnName(column);
+      const columnDef = sheet.columns.find(item => column >= item.min && column <= item.max);
+      if (columnDef && columnDef.hidden) th.style.display = 'none';
+      headerRow.appendChild(th);
+    }
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    alignedRows.forEach(pair => {
+      const rowData = side === 'A' ? pair.oldRow : pair.newRow;
+      const peerRow = side === 'A' ? pair.newRow : pair.oldRow;
+      const rowNumber = rowData ? rowData.number : null;
+      const tr = document.createElement('tr');
+      if (pair.oldRow && pair.newRow && pair.oldRow.hidden && pair.newRow.hidden) tr.style.display = 'none';
+      const height = Math.max(rowData ? rowData.height || 0 : 0, peerRow ? peerRow.height || 0 : 0);
+      if (height) tr.style.height = Math.max(18, height * 4 / 3) + 'px';
+      const rowHeader = document.createElement('th');
+      rowHeader.className = 'xlsx-row-header';
+      rowHeader.textContent = rowNumber ? String(rowNumber) : '';
+      tr.appendChild(rowHeader);
+      for (let column = 0; column <= maxColumn; column++) {
+        if (rowNumber && mergedCells.has(rowNumber + ':' + column)) continue;
+        const td = document.createElement('td');
+        if (rowNumber) td.dataset.cell = excelColumnName(column) + rowNumber;
+        const merge = rowNumber && mergeStarts.get(rowNumber + ':' + column);
+        if (merge) {
+          td.rowSpan = merge.rows;
+          td.colSpan = merge.columns;
+        }
+        const cell = rowData && rowData.cells[column];
+        const peerCell = peerRow && peerRow.cells[column];
+        if (cell) td.textContent = cell.value;
+        const value = cell ? cell.value : '';
+        const peerValue = peerCell ? peerCell.value : '';
+        if (column !== aligned.serialColumn && value && value !== peerValue)
+          td.classList.add(side === 'A' ? 'xlsx-cell-removed' : 'xlsx-cell-added');
+        const columnDef = sheet.columns.find(item => column >= item.min && column <= item.max);
+        if (columnDef && columnDef.hidden) td.style.display = 'none';
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    content.appendChild(table);
+  }
+
+  workbook.sheets.forEach((sheet, index) => {
+    if (workbook.sheets.length > 1) {
+      const tab = document.createElement('button');
+      tab.type = 'button';
+      tab.className = 'xlsx-sheet-tab';
+      tab.textContent = sheet.name;
+      tab.addEventListener('click', () => showSheet(index));
+      tabs.appendChild(tab);
+    }
+  });
+  body.appendChild(note);
+  body.appendChild(tabs);
+  body.appendChild(content);
+  showSheet(activeSheet);
+}
+
+function columnIndexFromLetters(letters) {
+  return [...letters.toUpperCase()].reduce((index, letter) =>
+    index * 26 + letter.charCodeAt(0) - 64, 0) - 1;
 }
 
 /* 给图片套上遮罩 + 差异标签 */
